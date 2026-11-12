@@ -2,10 +2,50 @@
 
 #include "EZ-Template/api.hpp"
 #include "api.h"
+#include <cstdint>
 
 extern Drive chassis;
 
-// Your motors, sensors, etc. should go here.  Below are examples
+// ---- devices, built in main.cpp ----
 
-// inline pros::Motor intake(1);
-// inline pros::adi::DigitalIn limit_switch('A');
+extern pros::Motor claw;
+extern pros::Motor toggle;
+extern pros::MotorGroup cascade;
+extern pros::Optical optical;
+
+// ---- toggle ----
+
+// toggle motor power out of 127
+// deliberately slow, fast spinning shoots past the color before the sensor can react
+constexpr int TOGGLE_SPEED = 60;
+
+// which color the toggle mech is aiming for
+enum class ToggleColor { red, blue, yellow };
+
+// color name for the brain screen
+inline const char* nameOf(ToggleColor color) {
+    switch (color) {
+        case ToggleColor::blue: return "BLUE";
+        case ToggleColor::yellow: return "YELLOW";
+        default: return "RED";
+    }
+}
+
+bool seesColor(ToggleColor color); // is the sensor looking at that color right now
+
+void autoToggle(ToggleColor color);                        // one driver control pass, returns right away
+void autoToggle(ToggleColor color, std::uint32_t timeout); // blocks until it sees the color, for routes
+
+bool toggleManualMode();     // true once the driver latched the sensor out with A
+ToggleColor allianceColor(); // the selected slot's color, so driver control aims the toggle right
+
+// ---- cascade ----
+// position = motor degrees from power on, so it has to start fully down
+
+constexpr double CASCADE_TOP = 10000; // top of travel, driver control won't go past it or below 0
+constexpr double CASCADE_SCORE = 855; // scoring height, used by the skills route and the L1 tap
+constexpr int CASCADE_RPM = 200;      // speed cap for move_absolute, green cartridge tops at 200
+
+constexpr double CASCADE_BOTTOM = 30;     // degrees above the tare point to stop at
+constexpr double CASCADE_SLOW_ZONE = 200; // start easing off this far above the floor
+constexpr int CASCADE_SLOW_POWER = 40;    // crawl speed inside that zone

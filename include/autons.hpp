@@ -1,18 +1,15 @@
 #pragma once
 
+#include "subsystems.hpp" // ToggleColor
+
+// drive/turn PID constants, set in autons.cpp
 void default_constants();
 
-void drive_example();
-void turn_example();
-void drive_and_turn();
-void wait_until_change_speed();
-void swing_example();
-void motion_chaining();
-void combining_movements();
-void interfered_example();
-void odom_drive_example();
-void odom_pure_pursuit_example();
-void odom_pure_pursuit_wait_until_example();
-void odom_boomerang_example();
-void odom_boomerang_injected_pure_pursuit_example();
-void measure_offsets();
+// the real route, takes the alliance color so the toggle aims right
+void skill_route(ToggleColor color);
+
+// wrappers with no args, this is what the EZ selector calls
+// Skills runs skill_route, the alliance slots are still TODO
+void skills_auton();
+void red_auton();
+void blue_auton();
