@@ -91,6 +91,25 @@ static void cascadeMoveTo(double target, std::uint32_t timeout, int rpm = CASCAD
     }
 }
 
+// drive the claw to its stop in one direction, then hold position there
+// power > 0 closes (in), power < 0 opens. blocks until it stalls against the stop or times out
+static void clawDriveToStop(int power) {
+    const std::uint32_t start = pros::millis();
+
+    while (true) {
+        claw.move(power);
+        const std::uint32_t elapsed = pros::millis() - start;
+        if (elapsed > CLAW_MIN_MS && std::fabs(claw.get_actual_velocity()) < CLAW_STALL_VEL) break;
+        if (elapsed > CLAW_MAX_MS) break;
+        pros::delay(10);
+    }
+
+    claw.brake(); // hold where it stopped
+}
+
+void clawClose() { clawDriveToStop(CLAW_SPEED); }   // in
+void clawOpen() { clawDriveToStop(-CLAW_SPEED); }   // out
+
 // ---- distance sensor reset (DSR) ----
 // one left-facing sensor, corrects the odom X coordinate off the left field wall
 // only meaningful near heading 0 (robot square, facing forward) so the beam hits the wall straight on
@@ -145,8 +164,7 @@ void skill_route(ToggleColor color) {
 
     cascadeMoveTo(CASCADE_BOTTOM + 250, 2500, 80); // slow on the way down, blocks until there
 
-    claw.move(-127); // open
-    pros::delay(300);
+    clawOpen(); // release
 
     chassis.pid_drive_set(-12_in, DRIVE_SPEED);
     chassis.pid_wait();
@@ -156,9 +174,9 @@ void skill_route(ToggleColor color) {
 
     cascadeMoveTo(CASCADE_BOTTOM, 2500, 80);
 
-    claw.move(127); // intake, left running for the rest of the route
+    clawClose(); // grab and hold, no stall
 
-    // drive 31 intaking, full speed for the first 28 then crawl at 37 for the last 3
+    // drive 31, full speed for the first 28 then crawl at 37 for the last 3
     chassis.pid_drive_set(31_in, DRIVE_SPEED, true);
     chassis.pid_wait_until(28_in);
     chassis.pid_speed_max_set(37);
@@ -167,13 +185,10 @@ void skill_route(ToggleColor color) {
     // 20% above scoring height, async so it keeps rising through the turn
     cascade.move_absolute(CASCADE_SCORE * 1.6, CASCADE_RPM);
 
-    claw.move(0); // coast through the turn
+    // claw keeps holding its grip through the turn
 
     chassis.pid_turn_set(180_deg, SLOW_SPEED);
     chassis.pid_wait();
-
-    claw.move(127); // back to intaking
-    pros::delay(20);
 
     chassis.pid_drive_set(12_in, DRIVE_SPEED);
     chassis.pid_wait();

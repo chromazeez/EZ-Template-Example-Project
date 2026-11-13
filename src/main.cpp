@@ -27,6 +27,9 @@ pros::MotorGroup cascade({-9, 10}, pros::MotorGearset::green); // two motors, 9 
 pros::Optical optical(16);
 pros::Distance distanceLeft(7); // left-facing, reads the left wall for odom X resets (DSR)
 
+// what the claw is doing in driver control, so one tap can drive it to the stop then let go
+enum class ClawGoal { hold, closing, opening };
+
 // ---- auto toggle ----
 // driver lines up with a toggle, sensor sees something close, motor spins until the right color
 // shows up, then stops
@@ -241,18 +244,35 @@ void opcontrol() {
   std::uint32_t upPressedAt = 0;
   bool cascadeMacro = false;
 
+  ClawGoal clawGoal = ClawGoal::hold; // what the claw is doing right now
+  std::uint32_t clawStart = 0;        // when the current claw move started
+
   while (true) {
     ez_template_extras(); // B + DOWN runs the auton, X opens the PID tuner
 
     chassis.opcontrol_arcade_standard(ez::SPLIT); // left stick drive, right stick turn
 
     // claw
-    if (master.get_digital(DIGITAL_R1)) {
-      claw.move(127);
-    } else if (master.get_digital(DIGITAL_R2)) {
-      claw.move(-63);
+    // tap R1 to close (in), R2 to open. drive to the stop, catch the stall, then hold position
+    // so holding the button never stalls the motor at full power
+    if (master.get_digital_new_press(DIGITAL_R1)) {
+      clawGoal = ClawGoal::closing;
+      clawStart = pros::millis();
+    } else if (master.get_digital_new_press(DIGITAL_R2)) {
+      clawGoal = ClawGoal::opening;
+      clawStart = pros::millis();
+    }
+
+    if (clawGoal == ClawGoal::closing || clawGoal == ClawGoal::opening) {
+      claw.move(clawGoal == ClawGoal::closing ? CLAW_SPEED : -CLAW_SPEED);
+      const std::uint32_t elapsed = pros::millis() - clawStart;
+      // stopped moving after it got going, or ran out of time = it's at the stop
+      if ((elapsed > CLAW_MIN_MS && std::fabs(claw.get_actual_velocity()) < CLAW_STALL_VEL) ||
+          elapsed > CLAW_MAX_MS) {
+        clawGoal = ClawGoal::hold;
+      }
     } else {
-      claw.move(0);
+      claw.brake(); // hold where it stopped, brake mode is hold
     }
 
     // A latches the optical sensor out

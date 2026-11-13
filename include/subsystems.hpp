@@ -55,3 +55,14 @@ constexpr int CASCADE_RPM = 200;      // speed cap for move_absolute, green cart
 constexpr double CASCADE_BOTTOM = 30;     // degrees above the tare point to stop at
 constexpr double CASCADE_SLOW_ZONE = 200; // start easing off this far above the floor
 constexpr int CASCADE_SLOW_POWER = 40;    // crawl speed inside that zone
+
+// ---- claw ----
+// R1 closes (in), R2 opens. the motor drives to its stop, then holds position instead of
+// grinding at full power, so holding the button can't stall and burn the motor
+constexpr int CLAW_SPEED = 110;             // drive speed toward the stop, out of 127
+constexpr std::uint32_t CLAW_MIN_MS = 150;  // let it get moving before checking for a stall
+constexpr std::uint32_t CLAW_MAX_MS = 1000; // give up cap, never drive into the stop longer than this
+constexpr double CLAW_STALL_VEL = 10;       // rpm, under this after CLAW_MIN_MS means it reached the stop
+
+void clawClose(); // auton: drive closed and hold, blocks until it reaches the stop
+void clawOpen();  // auton: drive open and hold
