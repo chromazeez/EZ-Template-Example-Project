@@ -304,7 +304,7 @@ void opcontrol() {
       upPressedAt = pros::millis();
     }
 
-    if (master.get_digital_new_release(DIGITAL_L1) &&
+    if (master.get_digital_new_press(DIGITAL_L1) &&
         pros::millis() - upPressedAt < TAP_MS) {
       cascade.move_absolute(CASCADE_SCORE, CASCADE_RPM);
       cascadeMacro = true;

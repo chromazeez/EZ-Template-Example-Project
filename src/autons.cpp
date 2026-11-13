@@ -146,11 +146,11 @@ void resetXFromLeftWall() {
 // ---- routes ----
 
 // turns are absolute in EZ, measured from where autonomous() zeroed the heading
-// the old LemLib turnBy(-45) off 90 becomes turn to 45, the zero-then-135 becomes turn to 180
+// claw calls are the no-stall helpers: clawOpen() releases, clawClose() grabs and holds
 void skill_route(ToggleColor color) {
     autoToggle(color, 5000);
 
-    chassis.pid_drive_set(7.25_in, DRIVE_SPEED, true);
+    chassis.pid_drive_set(12_in, DRIVE_SPEED, true);
     chassis.pid_wait();
 
     // async, climbs through the turn and drive below instead of the robot waiting for it
@@ -166,31 +166,68 @@ void skill_route(ToggleColor color) {
 
     clawOpen(); // release
 
-    chassis.pid_drive_set(-12_in, DRIVE_SPEED);
+    chassis.pid_drive_set(-14.5_in, DRIVE_SPEED);
     chassis.pid_wait();
 
-    chassis.pid_turn_set(45_deg, TURN_SPEED);
+    chassis.pid_turn_set(40_deg, TURN_SPEED);
     chassis.pid_wait();
 
     cascadeMoveTo(CASCADE_BOTTOM, 2500, 80);
 
-    clawClose(); // grab and hold, no stall
+    clawClose(); // grab
 
-    // drive 31, full speed for the first 28 then crawl at 37 for the last 3
+    // drive 31, full speed until 24 then crawl at 20 the rest of the way
     chassis.pid_drive_set(31_in, DRIVE_SPEED, true);
-    chassis.pid_wait_until(28_in);
-    chassis.pid_speed_max_set(37);
+    chassis.pid_wait_until(24_in);
+    chassis.pid_speed_max_set(20);
     chassis.pid_wait();
 
     // 20% above scoring height, async so it keeps rising through the turn
     cascade.move_absolute(CASCADE_SCORE * 1.6, CASCADE_RPM);
 
-    // claw keeps holding its grip through the turn
+    // claw keeps its grip through the turn
+
+    chassis.pid_drive_set(-2.5_in, DRIVE_SPEED);
+    chassis.pid_wait();
 
     chassis.pid_turn_set(180_deg, SLOW_SPEED);
     chassis.pid_wait();
 
-    chassis.pid_drive_set(12_in, DRIVE_SPEED);
+    clawClose(); // make sure it's still gripping
+    pros::delay(20);
+
+    chassis.pid_drive_set(19_in, DRIVE_SPEED, true);
+    chassis.pid_wait();
+
+    // ---- second scoring cycle ----
+
+    cascadeMoveTo(CASCADE_BOTTOM + 250, 2500, 80);
+
+    clawOpen(); // release
+
+    chassis.pid_drive_set(-14.5_in, DRIVE_SPEED);
+    chassis.pid_wait();
+
+    chassis.pid_turn_set(135_deg, SLOW_SPEED);
+    chassis.pid_wait();
+
+    cascadeMoveTo(CASCADE_BOTTOM, 2500, 80);
+
+    clawClose(); // grab
+
+    chassis.pid_drive_set(31_in, DRIVE_SPEED, true);
+    chassis.pid_wait_until(24_in);
+    chassis.pid_speed_max_set(20);
+    chassis.pid_wait();
+
+    cascade.move_absolute(CASCADE_SCORE * 1.6, CASCADE_RPM);
+
+    // claw keeps its grip through the turn
+
+    chassis.pid_drive_set(-2.5_in, DRIVE_SPEED);
+    chassis.pid_wait();
+
+    chassis.pid_turn_set(-90_deg, SLOW_SPEED);
     chassis.pid_wait();
 }
 
