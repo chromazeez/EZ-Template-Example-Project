@@ -71,16 +71,13 @@ void autoToggle(ToggleColor color) {
 static bool toggleManual = false;
 bool toggleManualMode() { return toggleManual; }
 
-// which alliance the selected slot is, so driver control aims the toggle right
-//   slot 0 Skills (red), slot 1 Red, slot 2 Blue
-ToggleColor allianceColor() {
-    return ez::as::auton_selector.auton_page_current == 2 ? ToggleColor::blue : ToggleColor::red;
-}
+// allianceColor() and selectedRoute() live in screen.cpp, they read the selector's current slot
 
 /**
  * Runs initialization code. This occurs as soon as the program is started.
  */
 void initialize() {
+  screenShowSplash(); // pulsing bat logo up now, until the IMU finishes calibrating
   ez::ez_template_print();
   pros::delay(500);  // Stop the user from doing anything while legacy ports configure
 
@@ -112,15 +109,8 @@ void initialize() {
   toggle.set_brake_mode(pros::MotorBrake::hold); // stop ON the color instead of coasting past
   claw.set_brake_mode(pros::MotorBrake::hold);
 
-  // Autonomous selector using LLEMU (temporary screen, the custom bat screen comes next)
-  ez::as::auton_selector.autons_add({
-      {"Skills\n\nFull skills route", skills_auton},
-      {"Red Alliance\n\nTODO: match route", red_auton},
-      {"Blue Alliance\n\nTODO: match route", blue_auton},
-  });
-
-  chassis.initialize();
-  ez::as::initialize();
+  chassis.initialize();  // calibrates the IMU, keep the robot still a couple of seconds
+  screenShowSelector();  // done calibrating, swap the logo for the bat selector
   master.rumble(chassis.drive_imu_calibrated() ? "." : "---");
 }
 
@@ -149,54 +139,9 @@ void autonomous() {
   chassis.drive_brake_set(MOTOR_BRAKE_HOLD);  // Hold helps autonomous consistency
   cascade.set_brake_mode(pros::MotorBrake::hold); // route needs the cascade to stay where it stops
 
-  ez::as::auton_selector.selected_auton_call();  // Calls selected auton from the selector
+  const AutonRoute& slot = selectedRoute();      // whichever slot is picked on the brain screen
+  if (slot.run != nullptr) slot.run(slot.color); // empty slots are nullptr, so check first
 }
-
-/**
- * Simplifies printing tracker values to the brain screen
- */
-void screen_print_tracker(ez::tracking_wheel *tracker, std::string name, int line) {
-  std::string tracker_value = "", tracker_width = "";
-  if (tracker != nullptr) {
-    tracker_value = name + " tracker: " + util::to_string_with_precision(tracker->get());
-    tracker_width = "  width: " + util::to_string_with_precision(tracker->distance_to_center_get());
-  }
-  ez::screen_print(tracker_value + tracker_width, line);
-}
-
-/**
- * Ez screen task, lets you view debug pages during driver control or autonomous
- */
-void ez_screen_task() {
-  while (true) {
-    if (!pros::competition::is_connected()) {
-      if (chassis.odom_enabled() && !chassis.pid_tuner_enabled()) {
-        if (ez::as::page_blank_is_on(0)) {
-          ez::screen_print("x: " + util::to_string_with_precision(chassis.odom_x_get()) +
-                               "\ny: " + util::to_string_with_precision(chassis.odom_y_get()) +
-                               "\na: " + util::to_string_with_precision(chassis.odom_theta_get()),
-                           1);
-
-          screen_print_tracker(chassis.odom_tracker_left, "l", 4);
-          screen_print_tracker(chassis.odom_tracker_right, "r", 5);
-          screen_print_tracker(chassis.odom_tracker_back, "b", 6);
-          // live distance sensor readout, handy for checking DSR on the field
-          ez::screen_print("dsr " + util::to_string_with_precision((double)distanceLeft.get() / 25.4) +
-                               "in  conf " + util::to_string_with_precision((double)distanceLeft.get_confidence()),
-                           7);
-        }
-      }
-    }
-
-    else {
-      if (ez::as::page_blank_amount() > 0)
-        ez::as::page_blank_remove_all();
-    }
-
-    pros::delay(ez::util::DELAY_TIME);
-  }
-}
-pros::Task ezScreenTask(ez_screen_task);
 
 /**
  * Extras for opcontrol:

@@ -1,5 +1,6 @@
 #include "main.h"
 #include <cmath>
+#include <iterator> // std::size
 
 /////
 // autonomous routes, EZ-Template
@@ -231,15 +232,15 @@ void skill_route(ToggleColor color) {
     chassis.pid_wait();
 }
 
-// ---- selector wrappers ----
-// the EZ selector calls a plain void(), these hand the alliance color to the real route
+// ---- selector list ----
+// what the brain screen cycles through, in order
+// the color on each line is also the alliance driver control aims at, so a red and a blue slot
+// can share one route function and still behave differently
 
-void skills_auton() { skill_route(ToggleColor::red); }
+const AutonRoute AUTON_ROUTES[] = {
+    {"Skills", ToggleColor::red, skill_route},
+    {"Red Alliance", ToggleColor::red, nullptr},   // TODO: write a match route, put it here
+    {"Blue Alliance", ToggleColor::blue, nullptr}, // TODO: same for blue
+};
 
-void red_auton() {
-    // TODO: write a red match route
-}
-
-void blue_auton() {
-    // TODO: write a blue match route
-}
+const int AUTON_ROUTE_COUNT = std::size(AUTON_ROUTES); // counted from the array, so adding a line is the only edit

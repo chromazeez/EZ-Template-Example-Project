@@ -66,3 +66,23 @@ constexpr double CLAW_STALL_VEL = 10;       // rpm, under this after CLAW_MIN_MS
 
 void clawClose(); // auton: drive closed and hold, blocks until it reaches the stop
 void clawOpen();  // auton: drive open and hold
+
+// ---- auton selector ----
+// a route is a function taking the alliance color, returning nothing
+// storing the function itself means the selector runs whichever route is picked, no big if/else
+using RouteFn = void (*)(ToggleColor);
+
+struct AutonRoute {
+    const char* name;  // what the screen shows
+    ToggleColor color; // our alliance for that slot, used by the route and driver control
+    RouteFn run;       // route to call, or nullptr for a slot with no route yet
+};
+
+extern const AutonRoute AUTON_ROUTES[]; // the slot list, in autons.cpp
+extern const int AUTON_ROUTE_COUNT;
+
+const AutonRoute& selectedRoute(); // whichever slot is picked right now
+
+// ---- brain screen, built in screen.cpp ----
+void screenShowSplash();   // pulsing logo, for while the IMU calibrates
+void screenShowSelector(); // swaps the splash for the selector
