@@ -144,27 +144,16 @@ void autonomous() {
 }
 
 /**
- * Extras for opcontrol:
- * - press B + DOWN to run the selected autonomous (only off a comp switch)
- * - press X to open the live PID tuner
+ * B + DOWN runs the selected autonomous from driver control, practice only.
+ * is_connected() goes true on a comp switch, so this is dead at a competition.
  */
 void ez_template_extras() {
   if (!pros::competition::is_connected()) {
-    if (master.get_digital_new_press(DIGITAL_X))
-      chassis.pid_tuner_toggle();
-
     if (master.get_digital(DIGITAL_B) && master.get_digital(DIGITAL_DOWN)) {
       pros::motor_brake_mode_e_t preference = chassis.drive_brake_get();
       autonomous();
       chassis.drive_brake_set(preference);
     }
-
-    chassis.pid_tuner_iterate();
-  }
-
-  else {
-    if (chassis.pid_tuner_enabled())
-      chassis.pid_tuner_disable();
   }
 }
 
@@ -177,7 +166,6 @@ void ez_template_extras() {
  *   up / down spin the toggle by hand (hold)
  *   A         failsafe latch for the optical sensor
  *   B + DOWN  run the selected auton, practice only
- *   X         live PID tuner
  */
 void opcontrol() {
   chassis.drive_brake_set(MOTOR_BRAKE_COAST); // drive coasts, feels better to drive on
