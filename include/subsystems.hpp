@@ -12,6 +12,12 @@ extern pros::Motor claw;
 extern pros::Motor toggle;
 extern pros::MotorGroup cascade;
 extern pros::Optical optical;
+extern pros::Distance distanceLeft; // left-facing, for wall resets
+
+// ---- distance sensor reset (DSR) ----
+// correct the odom X coordinate off the left field wall
+// safe to call anytime, it only acts when the robot is square to the wall and the reading is sane
+void resetXFromLeftWall();
 
 // ---- toggle ----
 

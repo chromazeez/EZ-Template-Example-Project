@@ -25,6 +25,7 @@ pros::Motor claw(2, pros::MotorGears::green);
 pros::Motor toggle(8, pros::MotorGears::green);
 pros::MotorGroup cascade({-9, 10}, pros::MotorGearset::green); // two motors, 9 faces the other way
 pros::Optical optical(16);
+pros::Distance distanceLeft(7); // left-facing, reads the left wall for odom X resets (DSR)
 
 // ---- auto toggle ----
 // driver lines up with a toggle, sensor sees something close, motor spins until the right color
@@ -176,7 +177,10 @@ void ez_screen_task() {
           screen_print_tracker(chassis.odom_tracker_left, "l", 4);
           screen_print_tracker(chassis.odom_tracker_right, "r", 5);
           screen_print_tracker(chassis.odom_tracker_back, "b", 6);
-          screen_print_tracker(chassis.odom_tracker_front, "f", 7);
+          // live distance sensor readout, handy for checking DSR on the field
+          ez::screen_print("dsr " + util::to_string_with_precision((double)distanceLeft.get() / 25.4) +
+                               "in  conf " + util::to_string_with_precision((double)distanceLeft.get_confidence()),
+                           7);
         }
       }
     }

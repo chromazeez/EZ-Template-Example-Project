@@ -91,6 +91,39 @@ static void cascadeMoveTo(double target, std::uint32_t timeout, int rpm = CASCAD
     }
 }
 
+// ---- distance sensor reset (DSR) ----
+// one left-facing sensor, corrects the odom X coordinate off the left field wall
+// only meaningful near heading 0 (robot square, facing forward) so the beam hits the wall straight on
+// gated hard so a bad reading can never teleport the robot
+
+constexpr double DSR_START_READING = 75.0; // inches the sensor read at the auto start, tape measured
+constexpr double DSR_MAX_ANGLE = 7.0;      // degrees off square, past this the beam is too slanted to trust
+constexpr int DSR_MIN_CONFIDENCE = 50;     // 0-63, below this the sensor is guessing at what it sees
+constexpr double DSR_MAX_MM = 2000.0;      // beyond the sensor's useful range
+constexpr double DSR_MAX_JUMP = 8.0;       // inches, a correction bigger than this is a bad reading, skip it
+constexpr double DEG2RAD = 3.14159265358979 / 180.0;
+
+void resetXFromLeftWall() {
+    // how far off square the robot is. heading wraps, so fold it to the nearest of 0
+    double off = std::fmod(chassis.drive_imu_get(), 360.0);
+    if (off > 180) off -= 360;
+    if (off < -180) off += 360;
+    if (std::fabs(off) > DSR_MAX_ANGLE) return; // too crooked, the beam isn't on the wall straight
+
+    if (distanceLeft.get_confidence() < DSR_MIN_CONFIDENCE) return; // sensor unsure
+    const double mm = distanceLeft.get();
+    if (mm <= 0 || mm > DSR_MAX_MM) return; // nothing there, or out of range
+
+    // the slanted reading is the hypotenuse, cos gives the true perpendicular distance to the wall
+    const double perp = (mm / 25.4) * std::cos(off * DEG2RAD);
+
+    // odom started where the sensor read DSR_START_READING, so X is how much farther out we are now
+    const double center_x = perp - DSR_START_READING;
+
+    if (std::fabs(center_x - chassis.odom_x_get()) > DSR_MAX_JUMP) return; // sanity, don't jump the robot
+    chassis.odom_x_set(center_x);
+}
+
 // ---- routes ----
 
 // turns are absolute in EZ, measured from where autonomous() zeroed the heading
