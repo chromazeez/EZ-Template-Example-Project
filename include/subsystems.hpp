@@ -84,5 +84,4 @@ extern const int AUTON_ROUTE_COUNT;
 const AutonRoute& selectedRoute(); // whichever slot is picked right now
 
 // ---- brain screen, built in screen.cpp ----
-void screenShowSplash();   // pulsing logo, for while the IMU calibrates
-void screenShowSelector(); // swaps the splash for the selector
+void screenShowSelector(); // the auton selector

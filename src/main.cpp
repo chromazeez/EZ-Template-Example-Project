@@ -77,7 +77,6 @@ bool toggleManualMode() { return toggleManual; }
  * Runs initialization code. This occurs as soon as the program is started.
  */
 void initialize() {
-  screenShowSplash(); // pulsing bat logo up now, until the IMU finishes calibrating
   ez::ez_template_print();
   pros::delay(500);  // Stop the user from doing anything while legacy ports configure
 
@@ -109,8 +108,8 @@ void initialize() {
   toggle.set_brake_mode(pros::MotorBrake::hold); // stop ON the color instead of coasting past
   claw.set_brake_mode(pros::MotorBrake::hold);
 
+  screenShowSelector();  // auton selector up before calibrating, so the screen isn't blank
   chassis.initialize();  // calibrates the IMU, keep the robot still a couple of seconds
-  screenShowSelector();  // done calibrating, swap the logo for the bat selector
   master.rumble(chassis.drive_imu_calibrated() ? "." : "---");
 }
 
