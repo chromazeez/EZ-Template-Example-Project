@@ -243,3 +243,23 @@ void red_auton() {
 void blue_auton() {
     // TODO: write a blue match route
 }
+
+// ---- tuning tests ----
+// run with B + DOWN, then check the result to tune the PID constants in default_constants()
+// autonomous() resets odom/heading to 0 before these run, so no reset needed here
+
+// drive 24", then show what odom thinks on the controller
+// the REAL check is a tape measure: if the distance is off, fix wheel diameter / rpm in main.cpp
+void test_drive() {
+    chassis.pid_drive_set(24_in, DRIVE_SPEED, true);
+    chassis.pid_wait();
+    master.set_text(1, 0, "y " + util::to_string_with_precision(chassis.odom_y_get()));
+}
+
+// turn to 90, then show where it actually landed (target is 90.00)
+// watch for overshoot or oscillation and tune pid_turn_constants_set / the turn exit conditions
+void test_turn() {
+    chassis.pid_turn_set(90_deg, TURN_SPEED);
+    chassis.pid_wait();
+    master.set_text(1, 0, "h " + util::to_string_with_precision(chassis.drive_imu_get()));
+}

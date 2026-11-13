@@ -13,3 +13,7 @@ void skill_route(ToggleColor color);
 void skills_auton();
 void red_auton();
 void blue_auton();
+
+// tuning tests: drive 24", turn to 90
+void test_drive();
+void test_turn();
