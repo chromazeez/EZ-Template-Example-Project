@@ -260,7 +260,7 @@ void skill_route(ToggleColor color) {
 
    
 
-    cascadeMoveTo(CASCADE_BOTTOM, 2500, 150);
+    cascade.move_absolute(CASCADE_BOTTOM, CASCADE_RPM); // async, lowers at max speed through the drive below
 
 
     // drive 31, full speed until 24 then crawl at 20 the rest of the way
