@@ -122,8 +122,6 @@ void initialize() {
       {"Skills\n\nFull skills route", skills_auton},
       {"Red Right\n\nMatch, bottom-right start", red_right},
       {"Blue Right\n\nMatch, top-left start (mirror)", blue_right},
-      {"Test Drive\n\nDrive 24 inches", test_drive},
-      {"Test Turn\n\nTurn to 90 degrees", test_turn},
   });
 
   chassis.initialize();

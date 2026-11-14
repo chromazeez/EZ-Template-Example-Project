@@ -12,7 +12,3 @@ void skill_route(ToggleColor color);
 void skills_auton();
 void red_right();  // skills route, red toggle, bottom-right start
 void blue_right(); // same route, blue toggle, 180-degree mirror (top-left start)
-
-// tuning tests: drive 24", turn to 90
-void test_drive();
-void test_turn();
