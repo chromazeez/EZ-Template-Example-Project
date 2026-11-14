@@ -27,8 +27,13 @@ pros::MotorGroup cascade({-9, 10}, pros::MotorGearset::green); // two motors, 9 
 pros::Optical optical(16);
 pros::Distance distanceLeft(7); // left-facing, reads the left wall for odom X resets (DSR)
 
-// what the claw is doing in driver control, so one tap can drive it to the stop then let go
-enum class ClawGoal { hold, closing, opening };
+// what the claw is doing in driver control. spinning is latched and runs forever, opening
+// drives to the hard stop by stall, half keeps the midpoint, hold is braked in place
+enum class ClawGoal { hold, spinning, opening, zeroing, half };
+
+bool clawZeroed = false;   // set the first time the claw reaches the closed stop and tares
+double clawOpenPos = 0;    // position of the open stop, so the real travel range is known
+bool clawOpenKnown = false;
 
 // ---- auto toggle ----
 // driver lines up with a toggle, sensor sees something close, motor spins until the right color
@@ -229,13 +234,14 @@ void ez_template_extras() {
 /**
  * Runs the operator control code.
  *   left stick drive, right stick turn
- *   R1 / R2   claw one way / the other (hold)
+ *   R1        claw spins closed and keeps spinning, only R2 or X stop it
+ *   R2        claw opens to the stop, then brakes
+ *   X         claw holds its midpoint (needs auton to have set the zero)
  *   L1 / L2   cascade up / down (hold)
  *   L1 tap    cascade drives itself to scoring height
  *   up / down spin the toggle by hand (hold)
  *   A         failsafe latch for the optical sensor
  *   B + DOWN  run the selected auton, practice only
- *   X         live PID tuner
  */
 void opcontrol() {
   chassis.drive_brake_set(MOTOR_BRAKE_COAST); // drive coasts, feels better to drive on
@@ -249,33 +255,90 @@ void opcontrol() {
 
   ClawGoal clawGoal = ClawGoal::hold; // what the claw is doing right now
   std::uint32_t clawStart = 0;        // when the current claw move started
+  std::uint32_t clawStallSince = 0;   // when it first stopped moving, 0 while it's still going
 
   while (true) {
-    ez_template_extras(); // B + DOWN runs the auton, X opens the PID tuner
+    ez_template_extras(); // B + DOWN runs the auton
 
     chassis.opcontrol_arcade_standard(ez::SPLIT); // left stick drive, right stick turn
 
     // claw
-    // tap R1 to close (in), R2 to open. drive to the stop, catch the stall, then hold position
-    // so holding the button never stalls the motor at full power
+    // tap R1 and it spins closed and keeps spinning, no stall check and no hold. only R2 or X
+    // stop it. R2 opens to the stop and brakes, X holds the midpoint off auton's zero
     if (master.get_digital_new_press(DIGITAL_R1)) {
-      clawGoal = ClawGoal::closing;
-      clawStart = pros::millis();
+      clawGoal = ClawGoal::spinning;
     } else if (master.get_digital_new_press(DIGITAL_R2)) {
       clawGoal = ClawGoal::opening;
       clawStart = pros::millis();
+      clawStallSince = 0;
+    } else if (master.get_digital_new_press(DIGITAL_X)) {
+      clawStart = pros::millis();
+      if (clawZeroed) {
+        claw.move_absolute(clawHalfTarget(), CLAW_HALF_RPM);
+        clawGoal = ClawGoal::half;
+      } else {
+        // the midpoint is measured off the closed stop and R1 never stalls now, so nothing in
+        // driver control has tared yet. close to the stop first to set the zero, then go to half
+        clawGoal = ClawGoal::zeroing;
+        clawStallSince = 0;
+      }
     }
 
-    if (clawGoal == ClawGoal::closing || clawGoal == ClawGoal::opening) {
-      claw.move(clawGoal == ClawGoal::closing ? CLAW_SPEED : -CLAW_SPEED);
+    if (clawGoal == ClawGoal::spinning) {
+      claw.move(CLAW_SPEED); // latched, runs until R2 or X takes over
+    } else if (clawGoal == ClawGoal::opening) {
+      claw.move(-CLAW_SPEED);
       const std::uint32_t elapsed = pros::millis() - clawStart;
+
       // stopped moving after it got going, or ran out of time = it's at the stop
       if ((elapsed > CLAW_MIN_MS && std::fabs(claw.get_actual_velocity()) < CLAW_STALL_VEL) ||
           elapsed > CLAW_MAX_MS) {
+        if (clawZeroed) { // measure the open stop, that's the other end of the travel
+          clawOpenPos = claw.get_position();
+          clawOpenKnown = true;
+        }
         clawGoal = ClawGoal::hold;
       }
+    } else if (clawGoal == ClawGoal::zeroing) {
+      // X with no zero yet: drive closed to find the stop, tare there, then head out to half
+      claw.move(CLAW_SPEED);
+      const std::uint32_t elapsed = pros::millis() - clawStart;
+
+      if (elapsed > CLAW_MIN_MS && std::fabs(claw.get_actual_velocity()) < CLAW_STALL_VEL) {
+        if (clawStallSince == 0) clawStallSince = pros::millis();
+      } else {
+        clawStallSince = 0;
+      }
+
+      // same extra push the auton close uses, so both zero at the same spot
+      if ((clawStallSince != 0 && pros::millis() - clawStallSince >= CLAW_CLOSE_EXTRA_MS) ||
+          elapsed > CLAW_MAX_MS) {
+        claw.tare_position();
+        clawZeroed = true;
+        claw.move_absolute(clawHalfTarget(), CLAW_HALF_RPM);
+        clawGoal = ClawGoal::half;
+        clawStart = pros::millis();
+      }
+    } else if (clawGoal == ClawGoal::half) {
+      // stay in this state and keep the midpoint, with all the slack on the OUTWARD side.
+      // position counts up toward the closed stop at 0, so anything above CLAW_HALF is the claw
+      // being pushed in: no tolerance for that, correct it straight away. outward it can sit
+      // anywhere inside the tolerance band before it gets pulled back
+      const double target = clawHalfTarget();
+      const double pos = claw.get_position();
+      const bool pushedIn = pos > target;
+      const bool tooFarOut = pos < target - CLAW_HALF_TOLERANCE;
+
+      if (!pushedIn && !tooFarOut) {
+        claw.brake();
+        clawStart = pros::millis(); // inside the band, reset the give up timer
+      } else if (pros::millis() - clawStart > CLAW_MAX_MS) {
+        claw.brake(); // can't get back to it, something is jamming the claw, quit pushing
+      } else {
+        claw.move_absolute(target, CLAW_HALF_RPM);
+      }
     } else {
-      claw.brake(); // hold where it stopped, brake mode is hold
+      claw.brake(); // on hold, brake mode is hold
     }
 
     // A latches the optical sensor out

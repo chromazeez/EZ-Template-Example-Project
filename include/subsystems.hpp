@@ -57,12 +57,40 @@ constexpr double CASCADE_SLOW_ZONE = 200; // start easing off this far above the
 constexpr int CASCADE_SLOW_POWER = 40;    // crawl speed inside that zone
 
 // ---- claw ----
-// R1 closes (in), R2 opens. the motor drives to its stop, then holds position instead of
-// grinding at full power, so holding the button can't stall and burn the motor
-constexpr int CLAW_SPEED = 110;             // drive speed toward the stop, out of 127
+// zero is the closed stop. the claw tares there every time it closes, so 0 means fully in and
+// nothing is allowed to target past it, same idea as the cascade's tare point.
+// open positions are negative, measured out from that stop.
+// R1 closes fully, R2 opens fully, X stops at a halfway point. all three drive until they get
+// there and then brake, so the motor is on hold and never keeps turning
+constexpr int CLAW_SPEED = 110;             // drive speed toward a hard stop, out of 127
 constexpr std::uint32_t CLAW_MIN_MS = 150;  // let it get moving before checking for a stall
 constexpr std::uint32_t CLAW_MAX_MS = 1000; // give up cap, never drive into the stop longer than this
 constexpr double CLAW_STALL_VEL = 10;       // rpm, under this after CLAW_MIN_MS means it reached the stop
 
+// the stall check calls it done the moment the claw slows down, which leaves the last bit of
+// squeeze on the table. closing keeps pushing in for this long after the stall before it stops
+constexpr std::uint32_t CLAW_CLOSE_EXTRA_MS = 120; // raise to clamp harder, 0 for the old behaviour
+
+constexpr double CLAW_IN = 0;              // closed: the tare point, and as far in as anything can go
+
+// the midpoint as a fraction of the claw's REAL travel, measured between the two hard stops,
+// because a fixed degree count can land past the open stop and then nothing moves.
+// 0 = fully closed, 1 = fully open. this is the number to tune
+constexpr double CLAW_HALF_FRACTION = 0.475;
+constexpr double CLAW_HALF = -40;          // fallback only, used until the claw has opened once
+constexpr int CLAW_HALF_RPM = 100;         // speed cap on the way to the halfway point (driver control)
+constexpr int CLAW_HALF_POWER = 50;        // power out of 127 on the way there in auton, slow so it doesn't overshoot
+constexpr double CLAW_HALF_TOLERANCE = 5;  // degrees, close enough to call it arrived and brake
+
+extern bool clawZeroed;    // true once the claw has reached the closed stop and tared there
+extern double clawOpenPos; // position of the open stop, measured the first time the claw opens
+extern bool clawOpenKnown; // true once that measurement exists
+
+double clawHalfTarget(); // where the midpoint actually is, in motor degrees
+
+constexpr std::uint32_t CLAW_RESET_MS = 60; // how long the motor coasts during a reset
+
+void clawReset(); // auton: put the claw motor back in a known state so the next move takes
 void clawClose(); // auton: drive closed and hold, blocks until it reaches the stop
 void clawOpen();  // auton: drive open and hold
+void clawHalf();  // auton: drive to the midpoint and hold, same position X holds in driver control

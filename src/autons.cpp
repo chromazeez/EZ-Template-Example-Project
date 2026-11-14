@@ -25,12 +25,12 @@ void default_constants() {
   chassis.pid_odom_angular_constants_set(6.5, 0.0, 52.5);    // angular for odom motions
   chassis.pid_odom_boomerang_constants_set(5.8, 0.0, 32.5);  // boomerang motions
 
-  // exit conditions
-  chassis.pid_turn_exit_condition_set(90_ms, 3_deg, 250_ms, 7_deg, 500_ms, 500_ms);
-  chassis.pid_swing_exit_condition_set(90_ms, 3_deg, 250_ms, 7_deg, 500_ms, 500_ms);
-  chassis.pid_drive_exit_condition_set(90_ms, 1_in, 250_ms, 3_in, 500_ms, 500_ms);
-  chassis.pid_odom_turn_exit_condition_set(90_ms, 3_deg, 250_ms, 7_deg, 500_ms, 750_ms);
-  chassis.pid_odom_drive_exit_condition_set(90_ms, 1_in, 250_ms, 3_in, 500_ms, 750_ms);
+  // exit conditions, all the times 25% shorter than EZ's defaults so motions settle sooner
+  chassis.pid_turn_exit_condition_set(68_ms, 3_deg, 188_ms, 7_deg, 375_ms, 375_ms);
+  chassis.pid_swing_exit_condition_set(68_ms, 3_deg, 188_ms, 7_deg, 375_ms, 375_ms);
+  chassis.pid_drive_exit_condition_set(68_ms, 1_in, 188_ms, 3_in, 375_ms, 375_ms);
+  chassis.pid_odom_turn_exit_condition_set(68_ms, 3_deg, 188_ms, 7_deg, 375_ms, 563_ms);
+  chassis.pid_odom_drive_exit_condition_set(68_ms, 1_in, 188_ms, 3_in, 375_ms, 563_ms);
   chassis.pid_turn_chain_constant_set(3_deg);
   chassis.pid_swing_chain_constant_set(5_deg);
   chassis.pid_drive_chain_constant_set(3_in);
@@ -107,8 +107,70 @@ static void clawDriveToStop(int power) {
     claw.brake(); // hold where it stopped
 }
 
-void clawClose() { clawDriveToStop(CLAW_SPEED); }   // in
-void clawOpen() { clawDriveToStop(-CLAW_SPEED); }   // out
+// put the claw motor back in a known state. after it has sat braked at a held position the
+// motor can stop responding to a plain move(), so drop the command, let the brake go, give it
+// a moment to actually be free, then put hold back
+void clawReset() {
+    claw.move(0);
+    claw.set_brake_mode(pros::MotorBrake::coast);
+    pros::delay(CLAW_RESET_MS);
+    claw.set_brake_mode(pros::MotorBrake::hold);
+}
+
+// in. the closed stop is the zero reference, so tare here too, same as driver control does
+void clawClose() {
+    clawDriveToStop(CLAW_SPEED);
+
+    // the stall check quits as soon as it slows, so push in a bit longer to finish the clamp
+    claw.move(CLAW_SPEED);
+    pros::delay(CLAW_CLOSE_EXTRA_MS);
+    claw.brake();
+
+    claw.tare_position();
+    clawZeroed = true;
+}
+
+// out. record where the open stop is, that plus the zero gives the claw's real travel
+void clawOpen() {
+    clawDriveToStop(-CLAW_SPEED);
+
+    if (clawZeroed) {
+        clawOpenPos = claw.get_position();
+        clawOpenKnown = true;
+    }
+}
+
+// where the midpoint sits in motor degrees. once both stops have been touched this is a real
+// fraction of the travel, so it can never land past the open stop the way a fixed number can
+double clawHalfTarget() {
+    if (clawOpenKnown) return clawOpenPos * CLAW_HALF_FRACTION;
+    return CLAW_HALF; // haven't measured the open stop yet, use the fallback
+}
+
+// drive the claw to the midpoint and brake there, the same position X holds in driver control.
+// blocks until it arrives, or gives up if something is jamming it
+// NOTE: this drives with claw.move(), NOT move_absolute. move_absolute leaves the motor's
+// position controller holding the motor, and then the voltage commands in clawClose() and
+// clawOpen() get ignored, so the next claw call does nothing at all
+void clawHalf() {
+    if (!clawZeroed) clawClose(); // the closed stop is the reference, so go find it first
+
+    const double target = clawHalfTarget();
+
+    // which way the midpoint is from here. position counts up toward the closed stop at 0
+    const bool outward = claw.get_position() > target;
+    const std::uint32_t start = pros::millis();
+
+    while (pros::millis() - start < CLAW_MAX_MS) {
+        const double pos = claw.get_position();
+        if (outward ? pos <= target : pos >= target) break; // got there
+
+        claw.move(outward ? -CLAW_HALF_POWER : CLAW_HALF_POWER);
+        pros::delay(10);
+    }
+
+    claw.brake(); // hold it there
+}
 
 // ---- distance sensor reset (DSR) ----
 // one left-facing sensor, corrects the odom X coordinate off the left field wall
@@ -143,92 +205,178 @@ void resetXFromLeftWall() {
     chassis.odom_x_set(center_x);
 }
 
+// ---- exit conditions ----
+// these are global in EZ, so a motion that doesn't need precision sets the loose ones,
+// runs, then puts the tuned ones back. keep these matched to default_constants()
+
+static void exit_conditions_default() {
+    chassis.pid_turn_exit_condition_set(68_ms, 3_deg, 188_ms, 7_deg, 375_ms, 375_ms);
+    chassis.pid_drive_exit_condition_set(68_ms, 1_in, 188_ms, 3_in, 375_ms, 375_ms);
+}
+
+// wider error band, shorter settle. exits sooner, lands less precisely
+static void exit_conditions_fast() {
+    chassis.pid_turn_exit_condition_set(23_ms, 4_deg, 75_ms, 8_deg, 225_ms, 375_ms);
+    chassis.pid_drive_exit_condition_set(23_ms, 2_in, 75_ms, 4_in, 225_ms, 375_ms);
+}
+
 // ---- routes ----
 
 // turns are absolute in EZ, measured from where autonomous() zeroed the heading
 // claw calls are the no-stall helpers: clawOpen() releases, clawClose() grabs and holds
 void skill_route(ToggleColor color) {
+    clawClose();
+
     autoToggle(color, 5000);
 
-    chassis.pid_drive_set(12_in, DRIVE_SPEED, true);
+    
+
+    chassis.pid_drive_set(10.5_in, DRIVE_SPEED, true);
     chassis.pid_wait();
 
     // async, climbs through the turn and drive below instead of the robot waiting for it
     cascade.move_absolute(CASCADE_SCORE, CASCADE_RPM);
 
     chassis.pid_turn_set(90_deg, SLOW_SPEED);
-    chassis.pid_wait();
+    chassis.pid_wait_quick();
 
-    chassis.pid_drive_set(12.5_in, 60, true);
-    chassis.pid_wait();
+   
 
-    cascadeMoveTo(CASCADE_BOTTOM + 250, 2500, 80); // slow on the way down, blocks until there
+    chassis.pid_drive_set(11.75_in, 80, true);
+    chassis.pid_wait_quick();
+
+
+    cascadeMoveTo(CASCADE_BOTTOM + 220, 2500, 200); // slow on the way down, blocks until there
 
     clawOpen(); // release
+    
+    exit_conditions_fast();
 
     chassis.pid_drive_set(-14.5_in, DRIVE_SPEED);
-    chassis.pid_wait();
+    chassis.pid_wait_quick();
 
     chassis.pid_turn_set(40_deg, TURN_SPEED);
-    chassis.pid_wait();
+    chassis.pid_wait_quick();
 
-    cascadeMoveTo(CASCADE_BOTTOM, 2500, 80);
+   
+
+    cascadeMoveTo(CASCADE_BOTTOM, 2500, 150);
+
+
+    // drive 31, full speed until 24 then crawl at 20 the rest of the way
+    chassis.pid_drive_set(26.5_in, 60, true);
+    chassis.pid_wait_quick();
 
     clawClose(); // grab
 
-    // drive 31, full speed until 24 then crawl at 20 the rest of the way
-    chassis.pid_drive_set(31_in, DRIVE_SPEED, true);
-    chassis.pid_wait_until(24_in);
-    chassis.pid_speed_max_set(20);
-    chassis.pid_wait();
+    pros::delay(250);
+
+    chassis.pid_drive_set(4_in, 40, true);
+    chassis.pid_wait_quick();
+
+    exit_conditions_default();
 
     // 20% above scoring height, async so it keeps rising through the turn
-    cascade.move_absolute(CASCADE_SCORE * 1.6, CASCADE_RPM);
-
+    cascade.move_absolute(CASCADE_SCORE * 1.7, CASCADE_RPM);
+    
+  
     // claw keeps its grip through the turn
 
-    chassis.pid_drive_set(-2.5_in, DRIVE_SPEED);
-    chassis.pid_wait();
+    chassis.pid_drive_set(-3_in, DRIVE_SPEED);
+    chassis.pid_wait_quick();
 
-    chassis.pid_turn_set(180_deg, SLOW_SPEED);
-    chassis.pid_wait();
+    chassis.pid_turn_set(180_deg, 60);
+    chassis.pid_wait_quick();
 
-    clawClose(); // make sure it's still gripping
-    pros::delay(20);
 
-    chassis.pid_drive_set(19_in, DRIVE_SPEED, true);
-    chassis.pid_wait();
+    chassis.pid_drive_set(19.25_in, 40, true);
+    chassis.pid_wait_quick();
 
     // ---- second scoring cycle ----
 
-    cascadeMoveTo(CASCADE_BOTTOM + 250, 2500, 80);
-
     clawOpen(); // release
 
-    chassis.pid_drive_set(-14.5_in, DRIVE_SPEED);
-    chassis.pid_wait();
+    // send the cascade down right here. the claw is empty now, so it can lower through the drive
+    // back AND the turn AND the 28.5 below, instead of trying to do it all in one drive
+    cascade.move_absolute(CASCADE_BOTTOM, 200);
 
-    chassis.pid_turn_set(135_deg, SLOW_SPEED);
-    chassis.pid_wait();
+    chassis.pid_drive_set(-19_in, DRIVE_SPEED);
+    chassis.pid_wait_quick();
 
-    cascadeMoveTo(CASCADE_BOTTOM, 2500, 80);
+    chassis.pid_turn_set(135_deg, TURN_SPEED);
+    chassis.pid_wait_quick();
+
+
+    chassis.pid_drive_set(28.5_in, 75, true);
+    chassis.pid_wait_quick();
 
     clawClose(); // grab
 
-    chassis.pid_drive_set(31_in, DRIVE_SPEED, true);
-    chassis.pid_wait_until(24_in);
-    chassis.pid_speed_max_set(20);
-    chassis.pid_wait();
+    chassis.pid_drive_set(-2.5_in, 75, true);
+    chassis.pid_wait_quick();
 
-    cascade.move_absolute(CASCADE_SCORE * 1.6, CASCADE_RPM);
+    cascade.move_absolute(CASCADE_SCORE * 1.1, CASCADE_RPM);
+
+    chassis.pid_turn_set(-90_deg, SLOW_SPEED);
+    chassis.pid_wait_quick();
+
+    cascade.move_absolute(CASCADE_SCORE * 3.1, 250);
+
+    chassis.pid_drive_set(18_in, 50, true);
+    chassis.pid_wait_quick();
+
+
+    pros::delay(250);
+    
+    clawOpen();
+
+    pros::delay(150);
+
+    // async, so the cascade comes all the way down during the drive back
+    cascade.move_absolute(CASCADE_BOTTOM, 150);
+
+
+    chassis.pid_drive_set(-30_in, DRIVE_SPEED);
+    chassis.pid_wait_quick();
+    
+    
+
+    chassis.pid_turn_set(178.5_deg, SLOW_SPEED);
+    chassis.pid_wait_quick();
+
+    clawHalf(); // midpoint, same as X in driver control
+
+    chassis.pid_drive_set(14.25_in, DRIVE_SPEED);
+    chassis.pid_wait_quick();
+
+    clawReset(); // the claw has been braked at the midpoint since line 334, wake the motor up
+    clawClose(); // grab
+
+    chassis.pid_drive_set(-2.5_in, DRIVE_SPEED);
+    chassis.pid_wait_quick();
+
+  
+    chassis.pid_drive_set(2.5_in, DRIVE_SPEED);
+    chassis.pid_wait_quick();
+
+    pros::delay(20);
+
+    chassis.pid_drive_set(-13_in, 70);
+    chassis.pid_wait_quick();
+
+
+/*
+
+
 
     // claw keeps its grip through the turn
 
     chassis.pid_drive_set(-2.5_in, DRIVE_SPEED);
     chassis.pid_wait();
 
-    chassis.pid_turn_set(-90_deg, SLOW_SPEED);
-    chassis.pid_wait();
+
+
+    */
 }
 
 // ---- selector wrappers ----
