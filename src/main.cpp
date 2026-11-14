@@ -120,8 +120,8 @@ void initialize() {
   // Autonomous selector using LLEMU (temporary screen, the custom bat screen comes next)
   ez::as::auton_selector.autons_add({
       {"Skills\n\nFull skills route", skills_auton},
-      {"Red Alliance\n\nTODO: match route", red_auton},
-      {"Blue Alliance\n\nTODO: match route", blue_auton},
+      {"Red Right\n\nMatch, bottom-right start", red_right},
+      {"Blue Right\n\nMatch, top-left start (mirror)", blue_right},
       {"Test Drive\n\nDrive 24 inches", test_drive},
       {"Test Turn\n\nTurn to 90 degrees", test_turn},
   });
@@ -344,6 +344,7 @@ void opcontrol() {
     // A latches the optical sensor out
     if (master.get_digital_new_press(DIGITAL_A)) {
       toggleManual = !toggleManual;
+      optical.set_led_pwm(toggleManual ? 0 : 100); // override on -> sensor light off, override off -> back on
       master.rumble(toggleManual ? "-" : ".");
     }
 

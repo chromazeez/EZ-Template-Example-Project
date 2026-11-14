@@ -9,10 +9,9 @@ void default_constants();
 void skill_route(ToggleColor color);
 
 // wrappers with no args, this is what the EZ selector calls
-// Skills runs skill_route, the alliance slots are still TODO
 void skills_auton();
-void red_auton();
-void blue_auton();
+void red_right();  // skills route, red toggle, bottom-right start
+void blue_right(); // same route, blue toggle, 180-degree mirror (top-left start)
 
 // tuning tests: drive 24", turn to 90
 void test_drive();

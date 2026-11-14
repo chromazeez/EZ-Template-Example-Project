@@ -384,13 +384,13 @@ void skill_route(ToggleColor color) {
 
 void skills_auton() { skill_route(ToggleColor::red); }
 
-void red_auton() {
-    // TODO: write a red match route
-}
+// red right: the exact skills route, red toggle. robot starts in the bottom-right quadrant
+void red_right() { skill_route(ToggleColor::red); }
 
-void blue_auton() {
-    // TODO: write a blue match route
-}
+// blue right: the same route, blue toggle. it's a 180-degree field rotation of red right
+// (bottom-right -> top-left), NOT a left-right flip, so every relative drive and turn is identical
+// the mirror happens by physically placing the robot in the opposite quadrant facing the other way
+void blue_right() { skill_route(ToggleColor::blue); }
 
 // ---- tuning tests ----
 // run with B + DOWN, then check the result to tune the PID constants in default_constants()
